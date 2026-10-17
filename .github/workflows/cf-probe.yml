@@ -8,62 +8,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Probe with curl variants
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install curl_cffi
+        run: python3 -m pip install --user -q curl_cffi
+
+      - name: Probe full chain (variants -> final URL -> ranged download)
         run: |
-          RELEASE="https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/"
-          VARIANT="https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/youtube-21-42-241-android-apk-download/"
+          bun -e '
+            import { getVariants } from "./src/lib/scrapers/variants";
+            import { getFinalDownloadUrl } from "./src/lib/scrapers/downloads";
+            import { getFilteredVariant } from "./src/lib/helpers";
+            import { execFileSync } from "node:child_process";
+
+            const variantsUrl = "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/";
+            const variants = await getVariants(variantsUrl);
+            console.log("[1] variants:", variants.length);
+            const v = getFilteredVariant(variants, { type: "apk", arch: "universal", dpi: "nodpi" });
+            if (!v) throw new Error("no variant");
+            console.log("[2] selected:", v.version, v.arch, v.dpi, v.type);
+
+            const finalUrl = await getFinalDownloadUrl(v.url);
+            console.log("[3] final url:", finalUrl.slice(0, 120) + "...");
+
+            const out = execFileSync("curl", ["-s", "-L", "-r", "0-1023", "-o", "/tmp/range.bin", "-w", "%{http_code} %{size_download}", finalUrl], { encoding: "utf8" });
+            console.log("[4] ranged download:", out);
+          '
+
+      - name: Challenge status of each page with plain curl (for reference)
+        run: |
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-
-          probe() {
-            local name="$1"; shift
-            local url="$1"; shift
-            local out code cf
-            out=$(curl -sS -L --compressed -A "$UA" -D /tmp/hdrs "$@" -o /tmp/body -w "%{http_code}" "$url" 2>&1) || true
-            code=$(cat /tmp/body 2>/dev/null | head -c 0; echo "$out")
-            cf=$(grep -i "cf-mitigated\|cf-chl" /tmp/hdrs 2>/dev/null | head -2 | tr -d '\r')
-            local challenge="no"
-            grep -q "Just a moment" /tmp/body 2>/dev/null && challenge="JUST-A-MOMENT"
-            echo "[$name] status=$code challenge=$challenge headers={$cf}"
-          }
-
-          echo "=== RELEASE PAGE ==="
-          probe "curl-default" "$RELEASE"
-          probe "curl-http1.1" "$RELEASE" --http1.1
-          probe "curl-http2" "$RELEASE" --http2
-
-          echo "=== VARIANT PAGE ==="
-          probe "curl-default" "$VARIANT"
-          probe "curl-http1.1" "$VARIANT" --http1.1
-          probe "curl-http2" "$VARIANT" --http2
-
-      - name: Probe with curl_cffi (Chrome TLS impersonation)
-        run: |
-          pip install -q curl_cffi
-          python3 - <<'EOF'
-          from curl_cffi import requests
-
-          urls = {
-              "release": "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/",
-              "variant": "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/youtube-21-42-241-android-apk-download/",
-          }
-          for name, url in urls.items():
-              for imp in ["chrome", "chrome124", "chrome131"]:
-                  try:
-                      r = requests.get(url, impersonate=imp, timeout=60)
-                      challenge = "JUST-A-MOMENT" if "Just a moment" in r.text else "no"
-                      print(f"[curl_cffi/{imp}/{name}] status={r.status_code} len={len(r.text)} challenge={challenge}")
-                  except Exception as e:
-                      print(f"[curl_cffi/{imp}/{name}] ERROR {e}")
-          EOF
-
-      - name: Probe with FlareSolverr
-        run: |
-          docker run -d --name flaresolverr -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:8191/health && break
-            sleep 2
+          for url in \
+            "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/" \
+            "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/youtube-21-42-241-android-apk-download/"; do
+            code=$(curl -s -L --compressed -A "$UA" -o /tmp/b -w "%{http_code}" "$url")
+            chal=$(grep -q "Just a moment" /tmp/b && echo YES || echo no)
+            echo "$code challenge=$chal $url"
           done
-          curl -s -X POST http://localhost:8191/v1 \
-            -H "Content-Type: application/json" \
-            -d '{"cmd":"request.get","url":"https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/youtube-21-42-241-android-apk-download/","maxTimeout":60000}' \
-            | python3 -c "import json,sys; r=json.load(sys); sol=r.get('solution',{}); txt=sol.get('response',''); print('[flaresolverr] status=',sol.get('status'), 'len=',len(txt), 'challenge=', 'JUST-A-MOMENT' if 'Just a moment' in txt else 'no', 'hasDownloadButton=', 'downloadButton' in txt)"
