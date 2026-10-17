@@ -22,26 +22,18 @@ jobs:
       - name: Install curl_cffi
         run: python3 -m pip install --user -q curl_cffi
 
-      - name: Probe full chain (variants -> final URL -> ranged download)
+      - name: Probe full chain (real download via APKMirrorDownloader)
         run: |
           bun -e '
-            import { getVariants } from "./src/lib/scrapers/variants";
-            import { getFinalDownloadUrl } from "./src/lib/scrapers/downloads";
-            import { getFilteredVariant } from "./src/lib/helpers";
-            import { execFileSync } from "node:child_process";
+            import { APKMirrorDownloader } from "./src/index";
+            import { readFileSync } from "node:fs";
 
-            const variantsUrl = "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-42-241-release/";
-            const variants = await getVariants(variantsUrl);
-            console.log("[1] variants:", variants.length);
-            const v = getFilteredVariant(variants, { type: "apk", arch: "universal", dpi: "nodpi" });
-            if (!v) throw new Error("no variant");
-            console.log("[2] selected:", v.version, v.arch, v.dpi, v.type);
-
-            const finalUrl = await getFinalDownloadUrl(v.url);
-            console.log("[3] final url:", finalUrl.slice(0, 120) + "...");
-
-            const out = execFileSync("curl", ["-s", "-L", "-r", "0-1023", "-o", "/tmp/range.bin", "-w", "%{http_code} %{size_download}", finalUrl], { encoding: "utf8" });
-            console.log("[4] ranged download:", out);
+            const { dest } = await APKMirrorDownloader.download(
+              { org: "google-inc", repo: "youtube" },
+              { version: "21.42.241", outDir: "/tmp", outFile: "yt-probe", arch: "universal", dpi: "nodpi", type: "apk" },
+            );
+            const buf = readFileSync(dest);
+            console.log("[done]", dest, buf.length, "magic:", buf.subarray(0, 4).toString("hex"));
           '
 
       - name: Challenge status of each page with plain curl (for reference)
