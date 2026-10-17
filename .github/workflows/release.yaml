@@ -49,11 +49,3 @@ jobs:
         run: bun run release ${{ github.event.inputs.bump }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: latest
-
-      - name: Publish
-        run: npm publish --access public --provenance

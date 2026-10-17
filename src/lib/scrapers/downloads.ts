@@ -1,16 +1,14 @@
 import { load } from "cheerio";
 
+import { curlText } from "../../utils/curl";
 import { withBaseUrl } from "../utils";
 
-export function getFinalDownloadUrl(downloadPageUrl: string) {
-  return fetch(downloadPageUrl)
-    .then(res => res.text())
-    .then(extractRedirectDownloadUrl)
-    .then(withBaseUrl)
-    .then(url => fetch(url))
-    .then(res => res.text())
-    .then(extractFinalDownloadUrl)
-    .then(withBaseUrl);
+export async function getFinalDownloadUrl(downloadPageUrl: string) {
+  const { text } = await curlText(downloadPageUrl);
+  const redirectUrl = withBaseUrl(extractRedirectDownloadUrl(text));
+
+  const { text: downloadPageText } = await curlText(redirectUrl);
+  return withBaseUrl(extractFinalDownloadUrl(downloadPageText));
 }
 
 export function extractRedirectDownloadUrl(downloadPageHtml: string) {

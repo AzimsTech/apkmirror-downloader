@@ -18,10 +18,10 @@
   ],
   "author": "tanishqmanuja",
   "license": "MIT",
-  "homepage": "https://github.com/tanishqmanuja/apkmirror-downloader#readme",
+  "homepage": "https://github.com/AzimsTech/apkmirror-downloader#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tanishqmanuja/apkmirror-downloader.git"
+    "url": "git+https://github.com/AzimsTech/apkmirror-downloader.git"
   },
   "packageManager": "bun@1.1.21",
   "scripts": {

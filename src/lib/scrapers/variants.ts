@@ -1,22 +1,21 @@
 import { load } from "cheerio";
 import { match } from "ts-pattern";
 
+import { curlText } from "../../utils/curl";
 import { isNotNull } from "../../utils/typescript";
 import { SUPPORTED_APP_TYPES } from "../types";
 import { withBaseUrl } from "../utils";
 
 export class RedirectError extends Error {}
 
-export function getVariants(variantsPageUrl: string) {
-  return fetch(variantsPageUrl)
-    .then(res => {
-      if (res.redirected) {
-        throw new RedirectError(res.url);
-      }
+export async function getVariants(variantsPageUrl: string) {
+  const { text, redirected, url } = await curlText(variantsPageUrl);
 
-      return res.text();
-    })
-    .then(extractVariants);
+  if (redirected) {
+    throw new RedirectError(url);
+  }
+
+  return extractVariants(text);
 }
 
 export function extractVariants(variantsPageHtml: string) {

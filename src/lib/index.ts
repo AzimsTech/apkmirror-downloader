@@ -1,7 +1,8 @@
-import { existsSync } from "fs";
+import { existsSync, renameSync, rmSync } from "fs";
 
 import { match } from "ts-pattern";
 
+import { curlDownload } from "../utils/curl";
 import { cleanObject } from "../utils/object";
 import { ensureExtension } from "../utils/path";
 import type { LooseAutocomplete } from "../utils/types";
@@ -130,20 +131,26 @@ export class APKMirrorDownloader {
 
     const finalDownloadUrl = await getFinalDownloadUrl(selectedVariant.url);
 
-    return fetch(finalDownloadUrl).then(async res => {
-      const filename = extractFileNameFromUrl(res.url);
-      const extension = filename.split(".").pop()!;
+    const outDir = o.outDir ?? ".";
+    const partialDest = `${outDir}/.apkmd-partial-${Date.now()}`;
 
-      const outDir = o.outDir ?? ".";
-      const outFile = ensureExtension(o.outFile ?? filename, extension);
-      const dest = `${outDir}/${outFile}`;
+    const { url: effectiveUrl } = await curlDownload(
+      finalDownloadUrl,
+      partialDest,
+    );
 
-      if (!o.overwrite && existsSync(dest)) {
-        return { dest, skipped: true as const };
-      }
+    const filename = extractFileNameFromUrl(effectiveUrl);
+    const extension = filename.split(".").pop()!;
+    const outFile = ensureExtension(o.outFile ?? filename, extension);
+    const dest = `${outDir}/${outFile}`;
 
-      await Bun.write(dest, res);
-      return { dest, skipped: false as const };
-    });
+    if (!o.overwrite && existsSync(dest)) {
+      rmSync(partialDest, { force: true });
+      return { dest, skipped: true as const };
+    }
+
+    rmSync(dest, { force: true });
+    renameSync(partialDest, dest);
+    return { dest, skipped: false as const };
   }
 }
